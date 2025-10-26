@@ -1,22 +1,20 @@
-"""
-The classic game of flappy bird. Made with python
-and pygame. Features pixel perfect collision using masks :o
 
-Date Modified:  Jul 30, 2019
-Author: Tech With Tim
-"""
 import pygame
 import random
 import os
 import time
+import neat
+import pickle
+#import visualize
+#import pickle
 pygame.font.init()  # init font
 
 WIN_WIDTH = 600
 WIN_HEIGHT = 800
-PIPE_VEL = 3
 FLOOR = 730
 STAT_FONT = pygame.font.SysFont("comicsans", 50)
 END_FONT = pygame.font.SysFont("comicsans", 70)
+DRAW_LINES = False
 
 WIN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 pygame.display.set_caption("Flappy Bird")
@@ -26,12 +24,12 @@ bg_img = pygame.transform.scale(pygame.image.load(os.path.join("imgs","bg.png"))
 bird_images = [pygame.transform.scale2x(pygame.image.load(os.path.join("imgs","bird" + str(x) + ".png"))) for x in range(1,4)]
 base_img = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs","base.png")).convert_alpha())
 
+gen = 0
+
 class Bird:
     """
     Bird class representing the flappy bird
     """
-    WIN_HEIGHT = 0
-    WIN_WIDTH = 0
     MAX_ROTATION = 25
     IMGS = bird_images
     ROT_VEL = 20
@@ -46,7 +44,6 @@ class Bird:
         """
         self.x = x
         self.y = y
-        self.gravity = 9.8
         self.tilt = 0  # degrees to tilt
         self.tick_count = 0
         self.vel = 0
@@ -131,9 +128,7 @@ class Pipe():
     """
     represents a pipe object
     """
-    WIN_HEIGHT = WIN_HEIGHT
-    WIN_WIDTH = WIN_WIDTH
-    GAP = 200
+    GAP = 160
     VEL = 5
 
     def __init__(self, x):
@@ -145,7 +140,6 @@ class Pipe():
         """
         self.x = x
         self.height = 0
-        self.gap = 100  # gap between top and bottom pipe
 
         # where the top and bottom of the pipe is
         self.top = 0
@@ -208,10 +202,9 @@ class Pipe():
 
 class Base:
     """
-    Represnts the moving floor of the game
+    Represents the moving floor of the game
     """
     VEL = 5
-    WIN_WIDTH = WIN_WIDTH
     WIDTH = base_img.get_width()
     IMG = base_img
 
@@ -262,80 +255,85 @@ def blitRotateCenter(surf, image, topleft, angle):
 
     surf.blit(rotated_image, new_rect.topleft)
 
-def menu_screen(win):
-    """
-    the menu screen that will start the game
-    :param win: the pygame window surface
-    :return: None
-    """
-    pass
-
-def end_screen(win):
-    """
-    display an end screen when the player loses
-    :param win: the pygame window surface
-    :return: None
-    """
-    run = True
-    text_label = END_FONT.render("Press Space to Restart", 1, (255,255,255))
-    while run:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run = False
-
-            if event.type == pygame.KEYDOWN:
-                main(win)
-
-        win.blit(text_label, (WIN_WIDTH/2 - text_label.get_width()/2, 500))
-        pygame.display.update()
-
-    pygame.quit()
-    quit()
-
-def draw_window(win, bird, pipes, base, score):
+def draw_window(win, birds, pipes, base, score, gen, pipe_ind):
     """
     draws the windows for the main game loop
     :param win: pygame window surface
     :param bird: a Bird object
     :param pipes: List of pipes
     :param score: score of the game (int)
+    :param gen: current generation
+    :param pipe_ind: index of closest pipe
     :return: None
     """
+    if gen == 0:
+        gen = 1
     win.blit(bg_img, (0,0))
 
     for pipe in pipes:
         pipe.draw(win)
 
     base.draw(win)
-    bird.draw(win)
+    for bird in birds:
+        # draw lines from bird to pipe
+        if DRAW_LINES:
+            try:
+                pygame.draw.line(win, (255,0,0), (bird.x+bird.img.get_width()/2, bird.y + bird.img.get_height()/2), (pipes[pipe_ind].x + pipes[pipe_ind].PIPE_TOP.get_width()/2, pipes[pipe_ind].height), 5)
+                pygame.draw.line(win, (255,0,0), (bird.x+bird.img.get_width()/2, bird.y + bird.img.get_height()/2), (pipes[pipe_ind].x + pipes[pipe_ind].PIPE_BOTTOM.get_width()/2, pipes[pipe_ind].bottom), 5)
+            except:
+                pass
+        # draw bird
+        bird.draw(win)
 
     # score
     score_label = STAT_FONT.render("Score: " + str(score),1,(255,255,255))
     win.blit(score_label, (WIN_WIDTH - score_label.get_width() - 15, 10))
 
+    # generations
+    score_label = STAT_FONT.render("Gens: " + str(gen-1),1,(255,255,255))
+    win.blit(score_label, (10, 10))
+
+    # alive
+    score_label = STAT_FONT.render("Alive: " + str(len(birds)),1,(255,255,255))
+    win.blit(score_label, (10, 50))
+
     pygame.display.update()
 
 
-def main(win):
+def eval_genomes(genomes, config): 
     """
-    Runs the main game loop
-    :param win: pygame window surface
-    :return: None
+    runs the simulation of the current population of
+    birds and sets their fitness based on the distance they
+    reach in the game.
     """
-    bird = Bird(230,350)
+    global WIN, gen
+    win = WIN
+    gen += 1
+
+    nets = []
+    birds = []
+    ge = []
+
+    for genome_id, genome in genomes:
+        genome.fitness = 0 # de "fitness" (een mate van hoe goed/slim elk vogeltje is) wordt op 0 gesteld.
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        nets.append(net)
+        birds.append(Bird(230,350))
+        ge.append(genome)
+
     base = Base(FLOOR)
     pipes = [Pipe(700)]
     score = 0
+    best_score = 0  # stelt de beste score op 0 voor de huidige generatie    
+    best_bird = None # Omdat er nog geen spel is gespeeld, is er nog geen beste vogel bepaald.
 
     clock = pygame.time.Clock()
-    start = False
-    lost = False
 
     run = True
-    while run:
-        pygame.time.delay(30)
-        clock.tick(60)
+    while run and len(birds) > 0:
+        clock.tick(100)
 
+        # per gebeurtenis wordt er een bepaald event geactiveerd.
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -343,47 +341,202 @@ def main(win):
                 quit()
                 break
 
-            if event.type == pygame.KEYDOWN and not lost:
-                if event.key == pygame.K_SPACE:
-                    if not start:
-                        start = True
-                    bird.jump()
+        pipe_ind = 0
+        if len(birds) > 0:
+            if len(pipes) > 1 and birds[0].x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+                pipe_ind = 1 # Als de vogel de eerste pijp voorbij is gevolgen, dan wordt de tweede pijp als eerstvolgende gezien.
 
-        # Move Bird, base and pipes
-        if start:
+        for x, bird in enumerate(birds):
+            ge[x].fitness += 0.4 # Dit geeft het vogeltje een beloning wannneer het blijft leven (en dus niet crashed).
             bird.move()
-        if not lost:
-            base.move()
 
-            if start:
-                rem = []
-                add_pipe = False
-                for pipe in pipes:
-                    pipe.move()
-                    # check for collision
-                    if pipe.collide(bird, win):
-                        lost = True
+            output = nets[birds.index(bird)].activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
 
-                    if pipe.x + pipe.PIPE_TOP.get_width() < 0:
-                        rem.append(pipe)
+            if output[0] > 0.5:
+                bird.jump() # Dit is de NEAT, die zegt of het vogeltje moet springen of niet.
 
-                    if not pipe.passed and pipe.x < bird.x:
-                        pipe.passed = True
-                        add_pipe = True
+        base.move()
 
-                if add_pipe:
-                    score += 1
-                    pipes.append(Pipe(WIN_WIDTH))
+        rem = []
+        add_pipe = False
+        for pipe in pipes:
+            pipe.move()
 
-                for r in rem:
-                    pipes.remove(r)
+            for bird in birds:
+                if pipe.collide(bird, win):
+                    ge[birds.index(bird)].fitness -= 1 # Dit geeft het vogeltje een straf wannneer het crashed/tegen de pijp aan botst. De             NEAT leert zo de botsingen te voorkomen. Het vogeltje zal daarna dus ook verwijderd worden uit de generatie.
+                    nets.pop(birds.index(bird)) 
+                    ge.pop(birds.index(bird)) 
+                    birds.pop(birds.index(bird)) # Deze drie regels verwijderen het vogeltje, die tegen de pijp is gebotst. Daarbij wordt ook          het netwerk en de genomene (genetische informatie) verwijderd.)
+
+            if pipe.x + pipe.PIPE_TOP.get_width() < 0:
+                rem.append(pipe) # Hier wordt de pijp verwijderd als hij buiten het scherm is.
+
+            if not pipe.passed and pipe.x < bird.x:
+                pipe.passed = True
+                add_pipe = True # Er wordt een nieuwe pijp toegevoegd als de laatste pijp weg is.
+
+        if add_pipe:
+            score += 1 # Omdat het vogeltje de pijp voorbij is gevlogen, verhoogd de score met 1.
+
+            for genome in ge:
+                genome.fitness += 5 # Wanneer het vogeltje door de pijp vliegt, zonder te crashen, krijgt het een beloning. De NEAT leert zo            dat dit goed gedrag is en zal doorgaan met dit vogeltje in de volgende generatie.  
+
+            pipes.append(Pipe(WIN_WIDTH))
+
+        for r in rem:
+            pipes.remove(r)
 
 
-        if bird.y + bird_images[0].get_height() - 10 >= FLOOR:
-            break
+        # kijk of de huidige score hoger is dan de beste score
+        if score > best_score:
+            best_score = score
+            best_bird = ge[0]
 
-        draw_window(WIN, bird, pipes, base, score)
+        # Alle registraties van de vogel worden verwijderd als deze de grond/bovenkant van het scherm raakt.
+        for bird in birds:
+            if bird.y + bird.img.get_height() - 10 >= FLOOR or bird.y < -50:
+                nets.pop(birds.index(bird))
+                ge.pop(birds.index(bird))
+                birds.pop(birds.index(bird))
 
-    end_screen(WIN)
+        draw_window(WIN, birds, pipes, base, score, gen, pipe_ind)
 
-main(WIN)
+        if best_score >= 100:
+            print("Beste vogel heeft 100 punten gehaald. Training van de vogels stopt...")
+            break # Hier wordt de training gestopt als de beste vogel 100 punten heeft gehaald.
+
+    if best_bird:
+        print("Bewaar de beste vogel in een pickle-bestand...")
+        with open("best_bird.pkl", "wb") as f :
+            pickle.dump(best_bird, f) # De beste vogel (die dus meer dan 100 punten heeft gehaald) wordt opgeslagen in een pickle-bestand.  
+        
+def play_with_best_bird(path, config):
+    """
+    Deze functie laadt het beste netwerk uit een pickle-bestand en speelt het Flappy Bird spel met dat netwerk.
+    :param path: pad naar het pickle-bestand met het beste netwerk
+    :param config: NEAT-configuratie
+    """
+    # Laad het beste netwerk uit de pickle
+    with open(path, "rb") as f:
+        winner = pickle.load(f)
+
+    # Maak een netwerk voor het beste genetische netwerk, deze gebruikt de inputs van de vogel uit het beste netwerk.
+    net = neat.nn.FeedForwardNetwork.create(winner, config)
+
+    # Nu wordt het spel opnnieuw opgesteld, maar dan met het beste netwerk.
+    win = WIN
+    bird = Bird(230, 350)
+    base = Base(FLOOR)
+    pipes = [Pipe(700)]
+    score = 0
+
+    clock = pygame.time.Clock()
+
+    # Hoofd-game loop
+    run = True
+    while run:
+        clock.tick(100)
+
+        # per gebeurtenis wordt er weer een bepaald event geactiveerd.
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                pygame.quit()
+                quit()
+                break
+
+        # Vind de index van de dichtstbijzijnde pijp
+        pipe_ind = 0
+        if len(pipes) > 1 and bird.x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+            pipe_ind = 1
+
+        # Laat de vogel bewegen
+        bird.move()
+
+        # Verkrijg de output van het neurale netwerk (beslissing om te springen of niet)
+        output = net.activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
+
+        # Als de output groter is dan 0.5, laat de vogel springen
+        if output[0] > 0.5:
+            bird.jump()
+
+        base.move()
+
+        # De instellingen voor de pijpen worden hier nog een keer genoteerd.
+        rem = []
+        add_pipe = False 
+        for pipe in pipes:
+            pipe.move()
+
+            # Controleer op botsingen tussen de vogel en de pijp
+            if pipe.collide(bird, win):
+                run = False
+                pygame.quit()
+                quit()
+                break
+
+            if pipe.x + pipe.PIPE_TOP.get_width() < 0:
+                rem.append(pipe)
+
+            if not pipe.passed and pipe.x < bird.x:
+                pipe.passed = True
+                add_pipe = True
+
+        if add_pipe:
+            score += 1
+            pipes.append(Pipe(WIN_WIDTH))
+
+        for r in rem:
+            pipes.remove(r)
+
+        # Als de vogel de grond raakt of de bovenkant van het scherm verlaat, eindig het spel
+        if bird.y + bird.img.get_height() - 10 >= FLOOR or bird.y < -50:
+            run = False
+
+        # Teken het spelvenster
+        draw_window(win, [bird], pipes, base, score, 0, pipe_ind)
+
+def run(config_file):
+    """
+    runs the NEAT algorithm to train a neural network to play flappy bird.
+    :param config_file: location of config file
+    :return: None
+    """
+    # Laadt de configuratie voor NEAT (config file)
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                config_file)
+
+    p = neat.Population(config) # Maakt een populatie aan.
+
+    p.add_reporter(neat.StdOutReporter(True)) # Een reporter is toegevoegd, die de status van de lopende (vliegendende*) populatie weergeeft.
+    stats = neat.StatisticsReporter() 
+    p.add_reporter(stats) # Deze reporter kan de statestieken (in de regel hierboven aangemaakt) van de populatie weergeven.
+    p.add_reporter(neat.Checkpointer(5)) # Elke 5 generaties wordt de populatie opgeslagen, zodat het niet verloren kan gaan.
+
+    winner = p.run(eval_genomes, 50) # 50 generaties lang leert de NEAT het spel.
+
+    print('\nBest genome:\n{!s}'.format(winner))  # Geeft de volledige informatie van het beste vogeltje weer.
+
+    # Bewaar de winnaar in een pickle .pkl bestand
+    with open("winner.pkl", "wb") as f:
+        pickle.dump(winner, f)
+
+    # Speel het eindspel met het beste netwerk
+    play_with_best_bird("winner.pkl", config)
+
+    # Roep de functie aan om NEAT te draaien en zo het beste netwerk te verkrijgen.
+    if __name__ == '__main__':
+    # Bepaal het pad naar het configuratiebestand
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config-feedforward.txt')
+
+    # Roep de functie aan om het spel te starten met de opgegeven configuratie
+    run(config_path)
+
+    # Dit kunnen we als het goed is weglaten, want de alerbeste vogel wordt al gebruikt.
+    play_with_best_bird("best_bird.pkl", config)
+    
+    # Sluit Pygame netjes af na afloop
+    pygame.quit()
