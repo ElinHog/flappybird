@@ -526,17 +526,14 @@ def run(config_file):
     # Speel het eindspel met het beste netwerk
     play_with_best_bird("winner.pkl", config)
 
-    # Roep de functie aan om NEAT te draaien en zo het beste netwerk te verkrijgen.
-    if __name__ == '__main__':
+    # Dit kunnen we als het goed is weglaten, want de beste vogel wordt al gebruikt.
+    play_with_best_bird("best_bird.pkl", config)
+
+# Roep de functie aan om NEAT te draaien en zo het beste netwerk te verkrijgen.
+if __name__ == '__main__':
     # Bepaal het pad naar het configuratiebestand
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, 'config-feedforward.txt')
 
-    # Roep de functie aan om het spel te starten met de opgegeven configuratie
-    run(config_path)
-
-    # Dit kunnen we als het goed is weglaten, want de alerbeste vogel wordt al gebruikt.
-    play_with_best_bird("best_bird.pkl", config)
-    
-    # Sluit Pygame netjes af na afloop
-    pygame.quit()
+    run(config_path)  # Roep de functie aan om het spel te starten met de opgegeven configuratie.
+    pygame.quit()  # Sluit Pygame netjes af na afloop
