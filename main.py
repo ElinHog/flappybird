@@ -20,10 +20,12 @@ WIN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 pygame.display.set_caption("Flappy Bird")
 
 pipe_img = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs","pipe.png")).convert_alpha())
-bg_img = pygame.transform.scale(pygame.image.load(os.path.join("imgs","bg.png")).convert_alpha(), (600, 900))
+bg_img = pygame.transform.scale(pygame.image.load(os.path.join("imgs","bg.png")).convert_alpha(),
+                                (600, 900))
 bird_images = [pygame.transform.scale2x(pygame.image.load(os.path.join("imgs","bird" + str(x) + ".png"))) for x in range(1,4)]
 base_img = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs","base.png")).convert_alpha())
 
+x = input("Voer trainen in om de vogel te spelen, en voer eindspel in om het eidspel te spelen.") # zorgt ervoor dat de speler kan kiezen of hij de vogel wil laten trainen of het eindspel wil spelen.
 gen = 0
 
 class Bird:
@@ -387,7 +389,6 @@ def eval_genomes(genomes, config):
         for r in rem:
             pipes.remove(r)
 
-
         # kijk of de huidige score hoger is dan de beste score
         if score > best_score:
             best_score = score
@@ -513,7 +514,7 @@ def run(config_file):
     p.add_reporter(neat.StdOutReporter(True)) # Een reporter is toegevoegd, die de status van de lopende (vliegendende*) populatie weergeeft.
     stats = neat.StatisticsReporter() 
     p.add_reporter(stats) # Deze reporter kan de statestieken (in de regel hierboven aangemaakt) van de populatie weergeven.
-    p.add_reporter(neat.Checkpointer(5)) # Elke 5 generaties wordt de populatie opgeslagen, zodat het niet verloren kan gaan.
+    p.add_reporter(neat.Checkpointer(5)) # Elke 5 generaties wordt de populatie opgeslagen. Als het spel nu crashed, kan je gewoon doorspelen met de opgeslagen populatie. Je hoeft dus niet helemaal opnieuw te beginnen. Dit zie je ook terug links n de console.
 
     winner = p.run(eval_genomes, 50) # 50 generaties lang leert de NEAT het spel.
 
@@ -523,17 +524,34 @@ def run(config_file):
     with open("winner.pkl", "wb") as f:
         pickle.dump(winner, f)
 
-    # Speel het eindspel met het beste netwerk
+    # Het eidspel wordt met de best vogel gespeeld.
     play_with_best_bird("winner.pkl", config)
 
-    # Dit kunnen we als het goed is weglaten, want de beste vogel wordt al gebruikt.
-    play_with_best_bird("best_bird.pkl", config)
-
+   
 # Roep de functie aan om NEAT te draaien en zo het beste netwerk te verkrijgen.
 if __name__ == '__main__':
     # Bepaal het pad naar het configuratiebestand
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, 'config-feedforward.txt')
 
-    run(config_path)  # Roep de functie aan om het spel te starten met de opgegeven configuratie.
+# Laadt de NEAT-configuratie
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                config_path)
+    
+    # De speler kan aan het begin kiezen of hij/zij de vogel wil laten trainen of het eindspel wil spelen.
+    if x == "trainen": 
+        run(config_path) # De training begint.
+
+    elif x == "eindspel":
+        if os.path.exists("winner.pkl"): # Als er een getraind vogltje is, dan wordt het eidspel gespeeld.
+            play_with_best_bird("winner.pkl", config)
+            print("Kijk VNC om het eindspel te zien.")
+        else:
+            print("Er is nog geen getrainde vogel gevonden (winner.pkl ontbreekt). Train eerst de AI.") # Als er nog geen getrainde vogel is, dan krijgt de speler deze reactie terug.
+
+    else:
+        print("Ongeldige invoer. Kies 'trainen' of 'eindspel'.") # Als de speler iets anders dan "trainen" of "eindspel" invoert, dan krijgt hij/zij deze reactie terug. Er zal dan geen spel worden gestart (zowel geen training als het eindspel).
+    
+    
     pygame.quit()  # Sluit Pygame netjes af na afloop
